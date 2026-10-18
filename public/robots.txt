@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /panel/
+Disallow: /api/
+Sitemap: https://народпобедителей.рф/sitemap.xml

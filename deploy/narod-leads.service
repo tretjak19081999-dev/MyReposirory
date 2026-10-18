@@ -1,0 +1,17 @@
+[Unit]
+Description=Narod Pobediteley lead intake
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/narod
+EnvironmentFile=/etc/narod/config.env
+ExecStart=/usr/bin/python3 /opt/narod/app.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
