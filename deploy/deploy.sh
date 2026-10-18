@@ -14,5 +14,9 @@ scp -i "$KEY" -o IdentitiesOnly=yes \
   "$ROOT/deploy/nginx/narod.conf" \
   "$HOST:/etc/nginx/sites-available/narod"
 
+scp -i "$KEY" -o IdentitiesOnly=yes \
+  "$ROOT/deploy/nginx/reload-nginx.sh" \
+  "$HOST:/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh"
+
 ssh -i "$KEY" -o IdentitiesOnly=yes "$HOST" \
-  'ln -sfn /etc/nginx/sites-available/narod /etc/nginx/sites-enabled/narod && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx'
+  'chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh && ln -sfn /etc/nginx/sites-available/narod /etc/nginx/sites-enabled/narod && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx'
