@@ -20,6 +20,8 @@ from pathlib import Path
 MSK = timezone(timedelta(hours=3))
 DATA = Path(os.environ.get("NAROD_DATA", "/var/lib/narod"))
 LEADS = DATA / "leads.jsonl"
+EVENTS = DATA / "events.jsonl"
+SNAPSHOT = DATA / "yougile-snapshot.json"
 HOST = os.environ.get("BIND", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8787"))
 LOCK = threading.Lock()
@@ -67,14 +69,37 @@ def limited(bucket, key, max_hits, window):
         return False
 
 
-def read_leads():
-    if not LEADS.exists():
+def read_jsonl(path):
+    if not path.exists():
         return []
     rows = []
-    for line in LEADS.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             rows.append(json.loads(line))
     return rows
+
+
+def read_leads():
+    return read_jsonl(LEADS)
+
+
+def read_events():
+    return read_jsonl(EVENTS)
+
+
+def append_event(event):
+    DATA.mkdir(parents=True, exist_ok=True)
+    event.setdefault("at", datetime.now(MSK).isoformat(timespec="minutes"))
+    with LOCK:
+        with EVENTS.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+def parse_time(value):
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def yougile_key():
@@ -158,6 +183,171 @@ def format_geo(geo):
     return ", ".join(part for part in parts if part) or "—"
 
 
+FUNNEL = ["Новые", "Связались", "Документы", "Оформление", "Завершено", "Не наш случай"]
+SYNC_LOCK = threading.Lock()
+
+
+def list_rows(payload):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        return payload.get("content") or []
+    return []
+
+
+def sync_yougile():
+    if not yougile_key():
+        return
+    if not SYNC_LOCK.acquire(blocking=False):
+        return
+    try:
+        board = os.environ.get("YOUGILE_BOARD_ID", "").strip()
+        query = f"/columns?limit=50" + (f"&boardId={board}" if board else "")
+        columns = [row for row in list_rows(yougile_request("GET", query)) if not row.get("deleted")]
+        if board:
+            columns = [row for row in columns if row.get("boardId") == board]
+        current = {}
+        for column in columns:
+            tasks = list_rows(yougile_request("GET", f"/task-list?columnId={column['id']}&limit=100"))
+            for task in tasks:
+                current[task["id"]] = {
+                    "title": task.get("title", ""),
+                    "columnId": column["id"],
+                    "column": column.get("title", ""),
+                }
+        previous = {}
+        if SNAPSHOT.exists():
+            previous = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+        for task_id, item in current.items():
+            old = previous.get(task_id)
+            if old and old.get("columnId") != item["columnId"]:
+                append_event({
+                    "type": "move",
+                    "taskId": task_id,
+                    "title": item["title"],
+                    "from": old.get("column", ""),
+                    "to": item["column"],
+                })
+        DATA.mkdir(parents=True, exist_ok=True)
+        SNAPSHOT.write_text(json.dumps(current, ensure_ascii=False), encoding="utf-8")
+    finally:
+        SYNC_LOCK.release()
+
+
+def sync_loop():
+    while True:
+        try:
+            sync_yougile()
+        except Exception:
+            pass
+        time.sleep(180)
+
+
+def bar_rows(pairs):
+    peak = max((count for _, count in pairs), default=0) or 1
+    html = []
+    for label, count in pairs:
+        width = max(4, round(count / peak * 100)) if count else 0
+        html.append(
+            f'<div class="bar"><span>{esc(label)}</span><i style="width:{width}%"></i><b>{count}</b></div>'
+        )
+    return "".join(html) or "<p class=\"muted\">Пока пусто.</p>"
+
+
+def analytics_html():
+    try:
+        if not SNAPSHOT.exists() or time.time() - SNAPSHOT.stat().st_mtime > 90:
+            sync_yougile()
+    except Exception:
+        pass
+    now = datetime.now(MSK)
+    leads = read_leads()
+    moments = []
+    for lead in leads:
+        moment = parse_time(lead.get("created"))
+        if moment:
+            moments.append((moment, lead))
+    today = sum(1 for moment, _ in moments if moment.date() == now.date())
+    week = sum(1 for moment, _ in moments if moment >= now - timedelta(days=7))
+    month = sum(1 for moment, _ in moments if moment.year == now.year and moment.month == now.month)
+    days = []
+    for offset in range(13, -1, -1):
+        day = (now - timedelta(days=offset)).date()
+        days.append((day.strftime("%d.%m"), sum(1 for moment, _ in moments if moment.date() == day)))
+    sources = {}
+    campaigns = {}
+    cities = {}
+    vk_leads = 0
+    for _, lead in moments:
+        utm = lead.get("utm") or {}
+        source = utm.get("utm_source") or "сайт"
+        sources[source] = sources.get(source, 0) + 1
+        if utm.get("utm_campaign"):
+            campaigns[utm["utm_campaign"]] = campaigns.get(utm["utm_campaign"], 0) + 1
+        if "vk" in source.lower() or utm.get("utm_source", "").lower() in {"vk", "vkontakte"}:
+            vk_leads += 1
+        city = lead.get("city") or (lead.get("geo") or {}).get("city") or "не указан"
+        cities[city] = cities.get(city, 0) + 1
+    snapshot = {}
+    if SNAPSHOT.exists():
+        snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    funnel_counts = {name: 0 for name in FUNNEL}
+    for item in snapshot.values():
+        title = item.get("column") or "Другое"
+        funnel_counts[title] = funnel_counts.get(title, 0) + 1
+    funnel_pairs = [(name, funnel_counts.get(name, 0)) for name in FUNNEL]
+    for name, count in funnel_counts.items():
+        if name not in FUNNEL and count:
+            funnel_pairs.append((name, count))
+    moves = [event for event in read_events() if event.get("type") == "move"][-12:]
+    move_html = "".join(
+        f'<article class="move"><strong>{esc(event.get("title") or "Заявка")}</strong><p class="muted">{esc(event.get("at"))}: {esc(event.get("from") or "—")} → {esc(event.get("to") or "—")}</p></article>'
+        for event in reversed(moves)
+    ) or "<p class=\"muted\">Перемещений по воронке ещё не было.</p>"
+    vk_note = "Кабинет ВКонтакте не подключён: показы, клики, CTR и расход появятся после доступа."
+    if os.environ.get("VK_ADS_TOKEN", "").strip():
+        vk_note = "Токен кабинета сохранён. Сводка по объявлениям подключится следующим шагом, заявки с меткой vk уже считаются."
+    return f"""
+    {panel_nav("analytics")}
+    <p class="eyebrow">Аналитика</p>
+    <h1>Откуда приходят заявки</h1>
+    <div class="stat-grid">
+      <article class="stat"><span>Сегодня</span><b>{today}</b></article>
+      <article class="stat"><span>7 дней</span><b>{week}</b></article>
+      <article class="stat"><span>Этот месяц</span><b>{month}</b></article>
+      <article class="stat"><span>Всего</span><b>{len(leads)}</b></article>
+    </div>
+    <section class="card"><h2>По дням</h2><div class="bars">{bar_rows(days)}</div></section>
+    <div class="grid-2" style="margin-top:16px">
+      <section class="card"><h2>Источники</h2><div class="bars">{bar_rows(sorted(sources.items(), key=lambda item: item[1], reverse=True)[:8])}</div></section>
+      <section class="card"><h2>Города</h2><div class="bars">{bar_rows(sorted(cities.items(), key=lambda item: item[1], reverse=True)[:8])}</div></section>
+    </div>
+    <section class="card" style="margin-top:16px"><h2>Кампании из ссылок</h2><div class="bars">{bar_rows(sorted(campaigns.items(), key=lambda item: item[1], reverse=True)[:8])}</div></section>
+    <section class="card" style="margin-top:16px">
+      <h2>Воронка YouGile</h2>
+      <p class="muted">Доска «сайт народпобедителей». Колонки: Новые, Связались, Документы, Оформление, Завершено, Не наш случай. Сдвиг карточки появляется здесь в течение трёх минут.</p>
+      <div class="funnel">{bar_rows(funnel_pairs)}</div>
+      <h3>Последние переходы</h3>
+      <div class="moves">{move_html}</div>
+    </section>
+    <section class="card" style="margin-top:16px">
+      <h2>Реклама ВКонтакте</h2>
+      <p>{esc(vk_note)}</p>
+      <p>Заявок с меткой vk: <strong>{vk_leads}</strong></p>
+    </section>
+    """
+
+
+def panel_nav(active):
+    items = [("leads", "/panel/", "Заявки"), ("analytics", "/panel/analytics", "Аналитика")]
+    links = []
+    for key, href, label in items:
+        cls = "btn" if key == active else "btn line"
+        links.append(f'<a class="{cls}" href="{href}">{label}</a>')
+    links.append('<a class="btn line" href="/panel/logout">Выйти</a>')
+    return '<nav class="panel-nav">' + "".join(links) + "</nav>"
+
+
 def reverse_geo(latitude, longitude):
     query = urllib.parse.urlencode(
         {
@@ -204,7 +394,7 @@ def page(title, body):
   <meta name="theme-color" content="#0e2744">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>{title}</title>
-  <link rel="icon" href="/img/logo.svg">
+  <link rel="icon" href="/favicon-panel.svg" type="image/svg+xml">
   <link rel="manifest" href="/panel/manifest.webmanifest">
   <link rel="stylesheet" href="/css/main.css">
 </head>
@@ -251,6 +441,9 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/panel/export.csv":
             self.export_csv()
             return
+        if route == "/panel/analytics":
+            self.send_html(page("Аналитика", analytics_html()))
+            return
         if route == "/panel":
             self.send_html(page("Заявки", panel_html(parsed.query)))
             return
@@ -266,6 +459,9 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b""
         if route == "/api/lead":
             self.create_lead(raw)
+            return
+        if route == "/api/yougile":
+            self.yougile_hook(parsed.query)
             return
         if route == "/api/geo":
             self.geo(raw)
@@ -296,6 +492,7 @@ class Handler(BaseHTTPRequestHandler):
             "status": clean(payload.get("status"), 120),
             "message": clean(payload.get("message"), 2000),
             "page": clean(payload.get("page"), 120),
+            "referrer": clean(payload.get("referrer"), 240),
         }
         digits = re.sub(r"\D", "", lead["phone"])
         if len(lead["name"]) < 2:
@@ -337,6 +534,14 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             with LEADS.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        source = (record.get("utm") or {}).get("utm_source") or "сайт"
+        append_event({
+            "type": "lead",
+            "name": record["name"],
+            "city": record["city"],
+            "source": source,
+            "campaign": (record.get("utm") or {}).get("utm_campaign", ""),
+        })
         self.send_json(200, {"ok": True})
 
     def geo(self, raw):
@@ -360,6 +565,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"city": ""})
             return
         self.send_json(200, found)
+
+    def yougile_hook(self, query):
+        token = urllib.parse.parse_qs(query).get("token", [""])[0]
+        expected = os.environ.get("YOUGILE_WEBHOOK_TOKEN", "")
+        if not expected or not hmac.compare_digest(token, expected):
+            self.send_json(403, {"error": "Нет доступа"})
+            return
+        threading.Thread(target=self._sync_safe, daemon=True).start()
+        self.send_json(200, {"ok": True})
+
+    @staticmethod
+    def _sync_safe():
+        try:
+            sync_yougile()
+        except Exception:
+            pass
 
     def login(self, raw):
         ip = client_ip(self.headers)
@@ -491,6 +712,7 @@ def panel_html(query):
         )
     listing = "".join(cards) or "<p>Заявок пока нет.</p>"
     return f"""
+    {panel_nav("leads")}
     <p class="eyebrow">Панель заявок</p>
     <h1>Новые обращения</h1>
     <p class="muted">Всего в базе: {len(read_leads())}. YouGile: {yougile}. На iPhone откройте эту страницу в Safari и выберите «На экран Домой».</p>
@@ -505,6 +727,7 @@ def panel_html(query):
 
 def main():
     DATA.mkdir(parents=True, exist_ok=True)
+    threading.Thread(target=sync_loop, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

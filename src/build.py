@@ -12,6 +12,7 @@ NAV = [
     ("index.html", "Главная", "index"),
     ("uslugi.html", "Услуги", "uslugi"),
     ("dokumenty.html", "Документы", "dokumenty"),
+    ("zakony.html", "Законы", "zakony"),
     ("vyplaty.html", "Выплаты", "vyplaty"),
     ("specialnosti.html", "Специальности", "specialnosti"),
     ("komu.html", "Кому помогаем", "komu"),
@@ -30,11 +31,11 @@ SOCIALS = [
 ]
 
 ICONS = {
-    "tg": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1d4e89"/><path fill="#fff" d="M17.6 7.3 15.7 16c-.1.6-.5.8-1 .5l-2.8-2.1-1.3 1.3c-.2.1-.3.3-.3.5l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9l11-4.2c.5-.2 1 .1.8.8Z"/></svg>',
-    "vk": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1d4e89"/><path fill="#fff" d="M12.6 16.4h.8s.2 0 .4-.2c.1-.2.1-.4 0-.6 0-.1-.3-.8-.9-1.5-.5-.6-.4-.5.2-1.5.3-.5.7-1.1.9-1.4.1-.3 0-.5-.3-.5h-1.2c-.2 0-.4.1-.4.3 0 .3-.5 1.2-.9 1.9-.4.6-.6.6-.7.6-.2 0-.3-.1-.3-.5V9.8c0-.4-.1-.5-.4-.5H9.2c-.2 0-.4.2-.4.3 0 .4.5.5.6 1.5v1.8c0 .4 0 .5-.2.5-.6 0-1.9-2-2-2.1-.1-.2-.2-.3-.5-.3H5.6c-.3 0-.4.2-.4.3 0 .3.6 1.8 2.6 3.8 1.4 1.4 3.2 1.5 3.2 1.5Z"/></svg>',
-    "ok": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1f6b45"/><circle cx="12" cy="9" r="2.2" fill="none" stroke="#fff" stroke-width="1.6"/><path fill="none" stroke="#fff" stroke-width="1.6" d="M8.2 13.2c1 .9 2.3 1.4 3.8 1.4s2.8-.5 3.8-1.4M12 14.6v2.2M9.4 18.4l2.6-1.6 2.6 1.6"/></svg>',
-    "wa": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1f6b45"/><path fill="#fff" d="M12 6.2a5.7 5.7 0 0 0-4.9 8.6L6.6 17.4l2.7-.7A5.7 5.7 0 1 0 12 6.2Zm3.3 8.1c-.1.4-.8.7-1.1.7-.3.1-1.2.2-2.1-.4-.7-.5-1.4-1.2-1.9-2-.3-.5-.1-1 .2-1.2l.4-.4c.1-.1.1-.3 0-.4l-.6-1.4c-.1-.3-.3-.3-.5-.3h-.4c-.2 0-.5.1-.6.4-.3.6-.1 1.6.6 2.5.8 1.1 1.9 1.8 3.2 2.2.5.1 1 .1 1.3-.1.2-.2.4-.5.4-.7 0-.1 0-.3-.1-.3l-.8-.4Z"/></svg>',
-    "max": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#b4232c"/><path fill="#fff" d="M6.8 16.2 12 6.4h1.7l5.2 9.8h-1.8l-1.2-2.4H9.9l-1.2 2.4H6.8Zm3.6-3.8h3.9L12.4 8.8 10.4 12.4Z"/></svg>',
+    "tg": "/img/icons/telegram.svg",
+    "vk": "/img/icons/vk.svg",
+    "ok": "/img/icons/odnoklassniki.svg",
+    "wa": "/img/icons/whatsapp.svg",
+    "max": "/img/icons/max.svg",
 }
 
 
@@ -43,7 +44,7 @@ def socials(compact=False):
     links = []
     for key, label, href, title in items:
         links.append(
-            f'<a href="{href}" target="_blank" rel="noopener noreferrer" title="{title}">{ICONS[key]}<span>{label}</span></a>'
+            f'<a href="{href}" target="_blank" rel="noopener noreferrer" title="{title}"><img src="{ICONS[key]}" width="22" height="22" alt=""><span>{label}</span></a>'
         )
     return '<div class="socials">' + "".join(links) + "</div>"
 
@@ -125,7 +126,8 @@ def chrome(meta, body, path):
   <meta name="description" content="{meta["description"]}">
   <meta name="rating" content="adult">
   <link rel="canonical" href="{canonical}">
-  <link rel="icon" href="/img/logo.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/favicon.svg">
   <meta property="og:title" content="{meta["title"]}">
   <meta property="og:description" content="{meta["description"]}">
   <meta property="og:type" content="website">
@@ -152,7 +154,10 @@ def chrome(meta, body, path):
         {socials()}
       </nav>
       <div class="head-actions">
-        <a class="phone-link" href="tel:+79163574362">+7 916 357-43-62</a>
+        <span class="phones">
+          <a class="phone-link" href="tel:+79163574362">+7 916 357-43-62</a>
+          <a class="phone-link" href="tel:+79264262737">+7 926 426-27-37</a>
+        </span>
         <a class="btn" href="/kontakty.html">Заявка</a>
         <button class="burger" id="burger" type="button" aria-expanded="false" aria-controls="nav" aria-label="Меню"><span></span><span></span><span></span></button>
       </div>
@@ -169,7 +174,7 @@ def chrome(meta, body, path):
       </div>
       <div>
         <h2>Разделы</h2>
-        <p><a href="/uslugi.html">Услуги</a><br><a href="/dokumenty.html">Документы</a><br><a href="/vyplaty.html">Выплаты</a><br><a href="/specialnosti.html">Специальности</a><br><a href="/komu.html">Кому помогаем</a></p>
+        <p><a href="/uslugi.html">Услуги</a><br><a href="/dokumenty.html">Документы</a><br><a href="/zakony.html">Законы</a><br><a href="/vyplaty.html">Выплаты</a><br><a href="/specialnosti.html">Специальности</a><br><a href="/komu.html">Кому помогаем</a></p>
       </div>
       <div>
         <h2>Документы сайта</h2>
@@ -179,7 +184,7 @@ def chrome(meta, body, path):
     <div class="wrap legal-note">
       <p>ИП Шувалов Роман Альбертович · ИНН 503408651872 · ОГРНИП 326508100529586 от 08.09.2026<br>
       Юридический адрес: 142632, Московская область, г. Орехово-Зуево, д. Демихово, ул. Заводская, 27, 37<br>
-      Офис для встреч: Москва, Фрунзенская наб., 22, стр. 4 · narodpobediteley@mail.ru · +7 916 357-43-62</p>
+      Офис для встреч: Москва, Фрунзенская наб., 22, стр. 4 · narodpobediteley@mail.ru · +7 916 357-43-62 · +7 926 426-27-37</p>
       <p>Реклама услуг частного агентства. Идентификатор рекламы (ERID) указывается в объявлениях рекламных систем, когда кабинет передаёт креатив в оператора рекламных данных. На сайте суммы выплат не публикуются: их назначают не мы.</p>
     </div>
   </footer>

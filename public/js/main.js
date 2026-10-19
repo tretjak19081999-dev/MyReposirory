@@ -75,6 +75,7 @@
         consent: form.consent.checked ? "yes" : "",
         website: form.website.value,
         page: location.pathname,
+        referrer: document.referrer || "",
         utm: read("np_utm") || {},
         geo: read("np_geo")
       };
