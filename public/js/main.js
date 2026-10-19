@@ -57,6 +57,12 @@
   });
 
   document.querySelectorAll("form.lead-form").forEach(function (form) {
+    var direction = params.get("direction");
+    if (direction && form.direction) {
+      Array.prototype.forEach.call(form.direction.options, function (option) {
+        if (option.value === direction) form.direction.value = direction;
+      });
+    }
     var city = params.get("city");
     if (city && form.city && !form.city.value) form.city.value = city;
     var storedGeo = read("np_geo");

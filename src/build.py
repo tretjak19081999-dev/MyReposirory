@@ -11,10 +11,12 @@ HOST = "https://народпобедителей.рф"
 NAV = [
     ("index.html", "Главная", "index"),
     ("trebovaniya.html", "Требования", "trebovaniya"),
+    ("vakansii.html", "Вакансии", "vakansii"),
     ("vyplaty.html", "Выплаты", "vyplaty"),
     ("semya.html", "Семья", "semya"),
     ("put.html", "Путь", "put"),
     ("voprosy.html", "Вопросы", "voprosy"),
+    ("stati.html", "Статьи", "stati"),
     ("dokumenty.html", "Документы", "dokumenty"),
     ("kontakty.html", "Контакты", "kontakty"),
 ]
@@ -192,7 +194,7 @@ def chrome(meta, body, path):
       </div>
       <div>
         <h2>Разделы</h2>
-        <p><a href="/trebovaniya.html">Требования</a><br><a href="/vyplaty.html">Выплаты</a><br><a href="/semya.html">Семья</a><br><a href="/put.html">Путь</a><br><a href="/voprosy.html">Вопросы</a><br><a href="/dokumenty.html">Документы</a><br><a href="/zakony.html">Законы</a><br><a href="/uslugi.html">Услуги</a></p>
+        <p><a href="/vakansii.html">Вакансии</a><br><a href="/otnoshenie.html">Отношение</a><br><a href="/stati.html">Статьи</a><br><a href="/voprosy.html">Вопросы</a><br><a href="/dokumenty.html">Документы</a><br><a href="/zakony.html">Законы</a><br><a href="/uslugi.html">Услуги</a></p>
       </div>
       <div>
         <h2>Документы сайта</h2>

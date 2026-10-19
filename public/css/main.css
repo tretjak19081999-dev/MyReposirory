@@ -450,6 +450,10 @@ textarea { min-height: 110px; resize: vertical; }
 .tone-blue { box-shadow: inset 4px 0 0 #1d4e89; }
 .tone-gold { box-shadow: inset 4px 0 0 #c48a1a; }
 .tone-green { box-shadow: inset 4px 0 0 #1f6b45; }
+.role { display: grid; gap: 12px; }
+.role img { width: 100%; height: 148px; object-fit: cover; border-radius: 12px; background: #e7eef6; }
+.faq-block { margin-top: 28px; }
+.faq-block h2 { margin-bottom: 10px; }
 .chart { width: 100%; height: auto; display: block; }
 .chart text { fill: #5c6b7a; font-family: Manrope, sans-serif; }
 .chart-card { overflow-x: auto; }
