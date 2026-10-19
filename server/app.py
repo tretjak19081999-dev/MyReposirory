@@ -21,7 +21,11 @@ MSK = timezone(timedelta(hours=3))
 DATA = Path(os.environ.get("NAROD_DATA", "/var/lib/narod"))
 LEADS = DATA / "leads.jsonl"
 EVENTS = DATA / "events.jsonl"
+HITS_LOG = DATA / "hits.jsonl"
+REPORTS = DATA / "reports.jsonl"
 SNAPSHOT = DATA / "yougile-snapshot.json"
+VK_CACHE = DATA / "vk-cache.json"
+METRIKA_CACHE = DATA / "metrika-cache.json"
 HOST = os.environ.get("BIND", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8787"))
 LOCK = threading.Lock()
@@ -87,12 +91,16 @@ def read_events():
     return read_jsonl(EVENTS)
 
 
-def append_event(event):
+def append_jsonl(path, record):
     DATA.mkdir(parents=True, exist_ok=True)
-    event.setdefault("at", datetime.now(MSK).isoformat(timespec="minutes"))
     with LOCK:
-        with EVENTS.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def append_event(event):
+    event.setdefault("at", datetime.now(MSK).isoformat(timespec="minutes"))
+    append_jsonl(EVENTS, event)
 
 
 def parse_time(value):
@@ -156,9 +164,14 @@ def push_yougile(lead):
         f"Имя: {lead['name']}",
         f"Телефон: {lead['phone']}",
         f"Город: {lead['city'] or '—'}",
+        f"Регион: {lead.get('region') or '—'}",
+        f"Возраст: {lead.get('age_years') or '—'}",
         f"Гражданство: {lead['citizenship']}",
+        f"Профессия: {lead.get('profession') or '—'}",
+        f"Куда хочет: {lead.get('direction') or '—'}",
         f"Ситуация: {lead['status'] or '—'}",
-        f"Комментарий: {lead['message'] or '—'}",
+        f"Дополнительно: {lead['message'] or '—'}",
+        f"Сообщения об услугах: {'да' if lead.get('ads') == 'yes' else 'нет'}",
         f"Гео: {format_geo(lead.get('geo'))}",
         f"Страница: {lead['page']}",
         f"Метки: {json.dumps(lead.get('utm') or {}, ensure_ascii=False)}",
@@ -254,92 +267,386 @@ def bar_rows(pairs):
     return "".join(html) or "<p class=\"muted\">Пока пусто.</p>"
 
 
-def analytics_html():
+def svg_columns(pairs):
+    if not pairs:
+        return "<p class=\"muted\">За период пусто.</p>"
+    width, height = 720, 190
+    peak = max((count for _, count in pairs), default=0) or 1
+    gap = 8
+    bar_w = max(6, (width - gap * (len(pairs) + 1)) / max(len(pairs), 1))
+    parts = [f'<svg class="chart" viewBox="0 0 {width} {height}" role="img">']
+    for index, (label, count) in enumerate(pairs):
+        bar_h = 0 if not count else max(4, (height - 36) * count / peak)
+        x = gap + index * (bar_w + gap)
+        y = height - 24 - bar_h
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bar_h:.1f}" rx="3" fill="#1d4e89"/>')
+        if count:
+            parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{y - 4:.1f}" text-anchor="middle" font-size="11">{count}</text>')
+        if len(pairs) <= 16 or index % 2 == 0:
+            parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{height - 6}" text-anchor="middle" font-size="10">{esc(label)}</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def period_bounds(query):
+    params = urllib.parse.parse_qs(query or "")
+    now = datetime.now(MSK)
+    preset = clean(params.get("preset", ["month"])[0], 20) or "month"
+    start_text = clean(params.get("from", [""])[0], 10)
+    end_text = clean(params.get("to", [""])[0], 10)
+    if start_text and end_text:
+        try:
+            start = datetime.fromisoformat(start_text).replace(tzinfo=MSK)
+            end = datetime.fromisoformat(end_text).replace(hour=23, minute=59, tzinfo=MSK)
+            return start, end, "custom", start_text, end_text
+        except ValueError:
+            pass
+    if preset == "day":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif preset == "week":
+        start = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif preset == "all":
+        start = datetime(2026, 1, 1, tzinfo=MSK)
+    else:
+        preset = "month"
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return start, now, preset, start.date().isoformat(), now.date().isoformat()
+
+
+def in_period(moment, start, end):
+    return bool(moment and start <= moment <= end)
+
+
+def tally(rows, key_of):
+    counts = {}
+    for row in rows:
+        key = key_of(row) or "не указан"
+        counts[key] = counts.get(key, 0) + 1
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+
+def period_switch(base, preset, start_text, end_text):
+    links = []
+    for key, label in (("day", "День"), ("week", "Неделя"), ("month", "Месяц"), ("all", "Всё время")):
+        cls = "btn" if preset == key else "btn line"
+        links.append(f'<a class="{cls}" href="{base}?preset={key}">{label}</a>')
+    return f"""
+    <form class="filters" method="get" action="{base}">
+      {"".join(links)}
+      <input type="date" name="from" value="{esc(start_text)}" aria-label="С">
+      <input type="date" name="to" value="{esc(end_text)}" aria-label="По">
+      <button class="btn navy" type="submit">Период</button>
+    </form>"""
+
+
+def external_json(method, url, payload=None, headers=None):
+    data = None if payload is None else payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+    request = urllib.request.Request(url, data=data, method=method, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.loads(response.read().decode())
+
+
+def vk_access_token():
+    cached = os.environ.get("VK_ADS_TOKEN", "").strip()
+    expires = float(os.environ.get("VK_ADS_TOKEN_UNTIL", "0") or "0")
+    if cached and expires > time.time() + 120:
+        return cached
+    client_id = os.environ.get("VK_ADS_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("VK_ADS_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret:
+        return cached
+    body = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }).encode()
+    found = external_json(
+        "POST",
+        "https://ads.vk.com/api/v2/oauth2/token.json",
+        body,
+        {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+    )
+    token = found.get("access_token", "")
+    if token:
+        os.environ["VK_ADS_TOKEN"] = token
+        os.environ["VK_ADS_TOKEN_UNTIL"] = str(time.time() + int(found.get("expires_in") or 3600))
+    return token
+
+
+def vk_report(start, end):
+    token = ""
+    try:
+        token = vk_access_token()
+    except Exception as error:
+        return {"ok": False, "error": clean(error, 180)}
+    if not token:
+        return {"ok": False, "error": "нет ключа кабинета"}
+    cache_key = f"{start.date().isoformat()}:{end.date().isoformat()}"
+    if VK_CACHE.exists() and time.time() - VK_CACHE.stat().st_mtime < 900:
+        cached = json.loads(VK_CACHE.read_text(encoding="utf-8"))
+        if cached.get("key") == cache_key and cached.get("ok"):
+            return cached
+    headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
+    plans = external_json("GET", "https://ads.vk.com/api/v2/ad_plans.json?limit=100", headers=headers)
+    items = plans.get("items") if isinstance(plans, dict) else plans
+    ids = [str(item.get("id")) for item in (items or []) if item.get("id")][:50]
+    names = {str(item.get("id")): item.get("name") or str(item.get("id")) for item in (items or [])}
+    if not ids:
+        report = {"ok": True, "key": cache_key, "shows": 0, "clicks": 0, "spent": 0, "campaigns": [], "days": []}
+        VK_CACHE.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+        return report
+    query = urllib.parse.urlencode({
+        "id": ",".join(ids),
+        "date_from": start.date().isoformat(),
+        "date_to": end.date().isoformat(),
+        "metrics": "base",
+    })
+    try:
+        stats = external_json("GET", "https://ads.vk.com/api/v2/statistics/ad_plans/day.json?" + query, headers=headers)
+    except urllib.error.HTTPError:
+        stats = external_json("GET", "https://ads.vk.com/api/v2/statistics/campaigns/day.json?" + query, headers=headers)
+    shows = clicks = 0
+    spent = 0.0
+    days = {}
+    campaigns = []
+    for item in stats.get("items") or []:
+        total = ((item.get("total") or {}).get("base") or {})
+        item_shows = int(total.get("shows") or 0)
+        item_clicks = int(total.get("clicks") or 0)
+        item_spent = float(total.get("spent") or 0)
+        shows += item_shows
+        clicks += item_clicks
+        spent += item_spent
+        campaigns.append((names.get(str(item.get("id")), str(item.get("id"))), item_clicks, round(item_spent, 2)))
+        for row in item.get("rows") or []:
+            base = row.get("base") or {}
+            day = row.get("date", "")[5:]
+            bucket = days.setdefault(day, {"shows": 0, "clicks": 0})
+            bucket["shows"] += int(base.get("shows") or 0)
+            bucket["clicks"] += int(base.get("clicks") or 0)
+    day_pairs = sorted(days.items())
+    report = {
+        "ok": True,
+        "key": cache_key,
+        "shows": shows,
+        "clicks": clicks,
+        "spent": round(spent, 2),
+        "ctr": round(clicks / shows * 100, 2) if shows else 0,
+        "campaigns": sorted(campaigns, key=lambda item: item[1], reverse=True)[:8],
+        "days": [[day, bucket["clicks"]] for day, bucket in day_pairs],
+    }
+    DATA.mkdir(parents=True, exist_ok=True)
+    VK_CACHE.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    return report
+
+
+def metrika_report(start, end):
+    token = os.environ.get("YANDEX_METRIKA_TOKEN", "").strip()
+    counter = os.environ.get("YANDEX_METRIKA_COUNTER", "").strip()
+    if not token or not counter:
+        return {"ok": False, "error": "нужны номер счётчика и токен Метрики"}
+    query = urllib.parse.urlencode({
+        "ids": counter,
+        "metrics": "ym:s:visits,ym:s:users,ym:s:pageviews",
+        "dimensions": "ym:s:date",
+        "date1": start.date().isoformat(),
+        "date2": end.date().isoformat(),
+        "limit": 100,
+    })
+    try:
+        found = external_json(
+            "GET",
+            "https://api-metrika.yandex.net/stat/v1/data?" + query,
+            headers={"Authorization": "OAuth " + token, "Accept": "application/json"},
+        )
+    except Exception as error:
+        return {"ok": False, "error": clean(error, 180)}
+    totals = found.get("totals") or [0, 0, 0]
+    days = []
+    for row in found.get("data") or []:
+        dims = row.get("dimensions") or [{}]
+        metrics = row.get("metrics") or [0]
+        name = (dims[0] or {}).get("name") or ""
+        days.append((name[8:10] + "." + name[5:7] if len(name) >= 10 else name, int(metrics[0] or 0)))
+    return {
+        "ok": True,
+        "visits": int(totals[0] or 0),
+        "users": int(totals[1] or 0),
+        "pageviews": int(totals[2] or 0),
+        "days": days,
+    }
+
+
+def filtered_leads(start, end):
+    rows = []
+    for lead in read_leads():
+        moment = parse_time(lead.get("created"))
+        if in_period(moment, start, end):
+            rows.append((moment, lead))
+    return rows
+
+
+def day_counts(rows, start, end):
+    days = []
+    cursor = start.date()
+    last = end.date()
+    while cursor <= last and len(days) < 62:
+        label = cursor.strftime("%d.%m")
+        days.append((label, sum(1 for moment, _ in rows if moment.date() == cursor)))
+        cursor += timedelta(days=1)
+    return days
+
+
+def analytics_html(query=""):
     try:
         if not SNAPSHOT.exists() or time.time() - SNAPSHOT.stat().st_mtime > 90:
             sync_yougile()
     except Exception:
         pass
-    now = datetime.now(MSK)
-    leads = read_leads()
-    moments = []
-    for lead in leads:
-        moment = parse_time(lead.get("created"))
-        if moment:
-            moments.append((moment, lead))
-    today = sum(1 for moment, _ in moments if moment.date() == now.date())
-    week = sum(1 for moment, _ in moments if moment >= now - timedelta(days=7))
-    month = sum(1 for moment, _ in moments if moment.year == now.year and moment.month == now.month)
-    days = []
-    for offset in range(13, -1, -1):
-        day = (now - timedelta(days=offset)).date()
-        days.append((day.strftime("%d.%m"), sum(1 for moment, _ in moments if moment.date() == day)))
-    sources = {}
-    campaigns = {}
-    cities = {}
-    vk_leads = 0
-    for _, lead in moments:
-        utm = lead.get("utm") or {}
-        source = utm.get("utm_source") or "сайт"
-        sources[source] = sources.get(source, 0) + 1
-        if utm.get("utm_campaign"):
-            campaigns[utm["utm_campaign"]] = campaigns.get(utm["utm_campaign"], 0) + 1
-        if "vk" in source.lower() or utm.get("utm_source", "").lower() in {"vk", "vkontakte"}:
-            vk_leads += 1
-        city = lead.get("city") or (lead.get("geo") or {}).get("city") or "не указан"
-        cities[city] = cities.get(city, 0) + 1
-    snapshot = {}
-    if SNAPSHOT.exists():
-        snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    start, end, preset, start_text, end_text = period_bounds(query)
+    moments = filtered_leads(start, end)
+    leads = [lead for _, lead in moments]
+    days = day_counts(moments, start, end)
+    sources = tally(leads, lambda lead: (lead.get("utm") or {}).get("utm_source") or "сайт")
+    campaigns = tally(leads, lambda lead: (lead.get("utm") or {}).get("utm_campaign") or "")
+    campaigns = [item for item in campaigns if item[0] != "не указан"][:8]
+    cities = tally(leads, lambda lead: lead.get("city") or (lead.get("geo") or {}).get("city"))
+    regions = tally(leads, lambda lead: lead.get("region"))
+    vk_leads = sum(1 for lead in leads if "vk" in ((lead.get("utm") or {}).get("utm_source") or "").lower())
+    snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8")) if SNAPSHOT.exists() else {}
     funnel_counts = {name: 0 for name in FUNNEL}
     for item in snapshot.values():
         title = item.get("column") or "Другое"
         funnel_counts[title] = funnel_counts.get(title, 0) + 1
     funnel_pairs = [(name, funnel_counts.get(name, 0)) for name in FUNNEL]
-    for name, count in funnel_counts.items():
-        if name not in FUNNEL and count:
-            funnel_pairs.append((name, count))
-    moves = [event for event in read_events() if event.get("type") == "move"][-12:]
+    moves = [event for event in read_events() if event.get("type") == "move"]
+    period_moves = []
+    for event in moves:
+        moment = parse_time(event.get("at"))
+        if in_period(moment, start, end):
+            period_moves.append(event)
     move_html = "".join(
         f'<article class="move"><strong>{esc(event.get("title") or "Заявка")}</strong><p class="muted">{esc(event.get("at"))}: {esc(event.get("from") or "—")} → {esc(event.get("to") or "—")}</p></article>'
-        for event in reversed(moves)
-    ) or "<p class=\"muted\">Перемещений по воронке ещё не было.</p>"
-    vk_note = "Кабинет ВКонтакте не подключён: показы, клики, CTR и расход появятся после доступа."
-    if os.environ.get("VK_ADS_TOKEN", "").strip():
-        vk_note = "Токен кабинета сохранён. Сводка по объявлениям подключится следующим шагом, заявки с меткой vk уже считаются."
+        for event in reversed(period_moves[-12:])
+    ) or "<p class=\"muted\">Перемещений за период не было.</p>"
+    try:
+        ads = vk_report(start, end)
+    except Exception as error:
+        ads = {"ok": False, "error": clean(error, 180)}
+    if ads.get("ok"):
+        cpl = round(ads["spent"] / len(leads), 2) if leads and ads.get("spent") else 0
+        vk_block = f"""
+        <div class="stat-grid">
+          <article class="stat"><span>Показы</span><b>{ads['shows']}</b></article>
+          <article class="stat"><span>Клики</span><b>{ads['clicks']}</b></article>
+          <article class="stat"><span>CTR</span><b>{ads['ctr']}%</b></article>
+          <article class="stat"><span>Расход, ₽</span><b>{ads['spent']}</b></article>
+        </div>
+        <p>Заявок с меткой vk за период: <strong>{vk_leads}</strong>. Цена заявки по расходу кабинета: <strong>{cpl} ₽</strong>.</p>
+        <div class="chart-card">{svg_columns([(label, count) for label, count in ads.get('days') or []])}</div>
+        <div class="bars">{bar_rows([(name, clicks) for name, clicks, _spent in ads.get('campaigns') or []])}</div>"""
+    else:
+        vk_block = f"<p>Кабинет ВКонтакте: {esc(ads.get('error') or 'нет данных')}. Заявок с меткой vk за период: <strong>{vk_leads}</strong>.</p>"
+    try:
+        metrika = metrika_report(start, end)
+    except Exception as error:
+        metrika = {"ok": False, "error": clean(error, 180)}
+    if metrika.get("ok"):
+        metrika_block = f"<p>Визиты {metrika['visits']}, посетители {metrika['users']}, просмотры {metrika['pageviews']}.</p><div class=\"chart-card\">{svg_columns(metrika['days'])}</div>"
+    else:
+        metrika_block = f"<p>Яндекс Метрика пока не подключена: {esc(metrika.get('error') or 'нет токена')}. Посещения сайта ниже считаются самим сайтом.</p>"
     return f"""
     {panel_nav("analytics")}
-    <p class="eyebrow">Аналитика</p>
-    <h1>Откуда приходят заявки</h1>
+    <p class="eyebrow">Сквозная аналитика</p>
+    <h1>Заявки, реклама и воронка</h1>
+    {period_switch("/panel/analytics", preset, start_text, end_text)}
     <div class="stat-grid">
-      <article class="stat"><span>Сегодня</span><b>{today}</b></article>
-      <article class="stat"><span>7 дней</span><b>{week}</b></article>
-      <article class="stat"><span>Этот месяц</span><b>{month}</b></article>
-      <article class="stat"><span>Всего</span><b>{len(leads)}</b></article>
+      <article class="stat"><span>Заявки</span><b>{len(leads)}</b></article>
+      <article class="stat"><span>Городов</span><b>{len([item for item in cities if item[0] != 'не указан'])}</b></article>
+      <article class="stat"><span>Источников</span><b>{len(sources)}</b></article>
+      <article class="stat"><span>Переходы воронки</span><b>{len(period_moves)}</b></article>
     </div>
-    <section class="card"><h2>По дням</h2><div class="bars">{bar_rows(days)}</div></section>
+    <section class="card chart-card"><h2>Заявки по дням</h2>{svg_columns(days)}</section>
     <div class="grid-2" style="margin-top:16px">
-      <section class="card"><h2>Источники</h2><div class="bars">{bar_rows(sorted(sources.items(), key=lambda item: item[1], reverse=True)[:8])}</div></section>
-      <section class="card"><h2>Города</h2><div class="bars">{bar_rows(sorted(cities.items(), key=lambda item: item[1], reverse=True)[:8])}</div></section>
+      <section class="card"><h2>Источники</h2><div class="bars">{bar_rows(sources[:8])}</div></section>
+      <section class="card"><h2>Города</h2><div class="bars">{bar_rows(cities[:8])}</div></section>
     </div>
-    <section class="card" style="margin-top:16px"><h2>Кампании из ссылок</h2><div class="bars">{bar_rows(sorted(campaigns.items(), key=lambda item: item[1], reverse=True)[:8])}</div></section>
+    <div class="grid-2" style="margin-top:16px">
+      <section class="card"><h2>Регионы</h2><div class="bars">{bar_rows(regions[:8])}</div></section>
+      <section class="card"><h2>Кампании из ссылок</h2><div class="bars">{bar_rows(campaigns)}</div></section>
+    </div>
     <section class="card" style="margin-top:16px">
       <h2>Воронка YouGile</h2>
-      <p class="muted">Доска «сайт народпобедителей». Колонки: Новые, Связались, Документы, Оформление, Завершено, Не наш случай. Сдвиг карточки появляется здесь в течение трёх минут.</p>
+      <p class="muted">Доска «сайт народпобедителей». Счётчик колонок — текущее положение карточек. Переходы ниже — за выбранный период.</p>
       <div class="funnel">{bar_rows(funnel_pairs)}</div>
-      <h3>Последние переходы</h3>
+      <h3>Переходы</h3>
       <div class="moves">{move_html}</div>
     </section>
-    <section class="card" style="margin-top:16px">
-      <h2>Реклама ВКонтакте</h2>
-      <p>{esc(vk_note)}</p>
-      <p>Заявок с меткой vk: <strong>{vk_leads}</strong></p>
-    </section>
+    <section class="card" style="margin-top:16px"><h2>Реклама ВКонтакте</h2>{vk_block}</section>
+    <section class="card" style="margin-top:16px"><h2>Яндекс Метрика</h2>{metrika_block}</section>
+    <form method="post" action="/panel/report?from={esc(start_text)}&to={esc(end_text)}"><button class="btn navy" type="submit">Сохранить отчёт за период</button></form>
     """
 
 
+def site_html(query=""):
+    start, end, preset, start_text, end_text = period_bounds(query)
+    hits = []
+    for hit in read_jsonl(HITS_LOG):
+        moment = parse_time(hit.get("at"))
+        if in_period(moment, start, end):
+            hits.append((moment, hit))
+    pages = tally([hit for _, hit in hits], lambda hit: hit.get("path") or "/")
+    refs = tally([hit for _, hit in hits], lambda hit: hit.get("ref") or "прямой заход")
+    sources = tally([hit for _, hit in hits], lambda hit: hit.get("source") or "без метки")
+    devices = tally([hit for _, hit in hits], lambda hit: hit.get("device") or "неизвестно")
+    return f"""
+    {panel_nav("site")}
+    <p class="eyebrow">Сайт</p>
+    <h1>Кто открывает страницы</h1>
+    <p class="muted">Считаем свой журнал визитов: страница, сайт-источник, метка и телефон или компьютер. IP и имя сюда не пишем. Яндекс Метрика добавится в сквозную аналитику, когда будут номер счётчика и токен.</p>
+    {period_switch("/panel/site", preset, start_text, end_text)}
+    <div class="stat-grid">
+      <article class="stat"><span>Просмотры</span><b>{len(hits)}</b></article>
+      <article class="stat"><span>Страниц</span><b>{len(pages)}</b></article>
+      <article class="stat"><span>Источников</span><b>{len(refs)}</b></article>
+      <article class="stat"><span>С меткой</span><b>{sum(count for name, count in sources if name != 'без метки')}</b></article>
+    </div>
+    <section class="card chart-card"><h2>Просмотры по дням</h2>{svg_columns(day_counts(hits, start, end))}</section>
+    <div class="grid-2" style="margin-top:16px">
+      <section class="card"><h2>Страницы</h2><div class="bars">{bar_rows(pages[:10])}</div></section>
+      <section class="card"><h2>Откуда пришли</h2><div class="bars">{bar_rows(refs[:8])}</div></section>
+    </div>
+    <div class="grid-2" style="margin-top:16px">
+      <section class="card"><h2>Метки</h2><div class="bars">{bar_rows(sources[:8])}</div></section>
+      <section class="card"><h2>Устройства</h2><div class="bars">{bar_rows(devices)}</div></section>
+    </div>"""
+
+
+def reports_html():
+    rows = read_jsonl(REPORTS)
+    cards = []
+    for report in reversed(rows[-30:]):
+        cards.append(
+            f"""<article class="card"><h3>{esc(report.get('title') or 'Отчёт')}</h3>
+            <p class="muted">{esc(report.get('saved'))} · {esc(report.get('start'))} — {esc(report.get('end'))}</p>
+            <p>Заявки: <strong>{esc(report.get('leads'))}</strong> · Просмотры: <strong>{esc(report.get('hits'))}</strong> · Клики VK: <strong>{esc(report.get('vk_clicks') or 0)}</strong> · Расход: <strong>{esc(report.get('vk_spent') or 0)} ₽</strong></p></article>"""
+        )
+    listing = "".join(cards) or "<p class=\"muted\">Сохранённых отчётов ещё нет. На сквозной аналитике нажмите «Сохранить отчёт за период».</p>"
+    return f"""
+    {panel_nav("reports")}
+    <p class="eyebrow">Отчёты</p>
+    <h1>История периодов</h1>
+    <p class="muted">Каждое сохранение фиксирует цифры на этот момент. Сырые заявки и просмотры остаются в базе и после этого.</p>
+    <div class="lead-list">{listing}</div>"""
+
+
 def panel_nav(active):
-    items = [("leads", "/panel/", "Заявки"), ("analytics", "/panel/analytics", "Аналитика")]
+    items = [
+        ("leads", "/panel/", "Заявки"),
+        ("analytics", "/panel/analytics", "Сквозная"),
+        ("reports", "/panel/reports", "Отчёты"),
+        ("site", "/panel/site", "Сайт"),
+    ]
     links = []
     for key, href, label in items:
         cls = "btn" if key == active else "btn line"
@@ -442,7 +749,13 @@ class Handler(BaseHTTPRequestHandler):
             self.export_csv()
             return
         if route == "/panel/analytics":
-            self.send_html(page("Аналитика", analytics_html()))
+            self.send_html(page("Сквозная аналитика", analytics_html(parsed.query)))
+            return
+        if route == "/panel/reports":
+            self.send_html(page("Отчёты", reports_html()))
+            return
+        if route == "/panel/site":
+            self.send_html(page("Сайт", site_html(parsed.query)))
             return
         if route == "/panel":
             self.send_html(page("Заявки", panel_html(parsed.query)))
@@ -459,6 +772,15 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b""
         if route == "/api/lead":
             self.create_lead(raw)
+            return
+        if route == "/api/hit":
+            self.create_hit(raw)
+            return
+        if route == "/panel/report":
+            if not self.authorized():
+                self.send_json(401, {"error": "Нет доступа"})
+                return
+            self.save_report()
             return
         if route == "/api/yougile":
             self.yougile_hook(parsed.query)
@@ -484,13 +806,29 @@ class Handler(BaseHTTPRequestHandler):
         if clean(payload.get("website"), 80):
             self.send_json(200, {"ok": True})
             return
+        citizenship = clean(payload.get("citizenship"), 80)
+        if citizenship == "Другое":
+            other = clean(payload.get("citizenship_other"), 80)
+            if len(other) < 2:
+                self.send_json(400, {"error": "Напишите своё гражданство"})
+                return
+            citizenship = "Другое: " + other
+        try:
+            age_years = int(clean(payload.get("age_years"), 3))
+        except ValueError:
+            age_years = 0
         lead = {
             "name": clean(payload.get("name"), 80),
             "phone": clean(payload.get("phone"), 20),
             "city": clean(payload.get("city"), 80),
-            "citizenship": clean(payload.get("citizenship"), 80),
+            "region": clean(payload.get("region"), 80),
+            "age_years": str(age_years) if age_years else "",
+            "citizenship": citizenship,
+            "profession": clean(payload.get("profession"), 160),
+            "direction": clean(payload.get("direction"), 80),
             "status": clean(payload.get("status"), 120),
             "message": clean(payload.get("message"), 2000),
+            "ads": "yes" if payload.get("ads") == "yes" else "no",
             "page": clean(payload.get("page"), 120),
             "referrer": clean(payload.get("referrer"), 240),
         }
@@ -501,8 +839,18 @@ class Handler(BaseHTTPRequestHandler):
         if len(digits) < 10:
             self.send_json(400, {"error": "Укажите телефон"})
             return
-        if lead["citizenship"] not in CITIZENSHIP:
+        if len(lead["city"]) < 2 or len(lead["region"]) < 2:
+            self.send_json(400, {"error": "Укажите город и регион"})
+            return
+        if age_years < 18 or age_years > 80:
+            self.send_json(400, {"error": "Заявку принимаем с 18 лет"})
+            return
+        base_citizenship = citizenship.split(":", 1)[0]
+        if base_citizenship not in CITIZENSHIP:
             self.send_json(400, {"error": "Выберите гражданство"})
+            return
+        if len(lead["profession"]) < 2 or not lead["direction"]:
+            self.send_json(400, {"error": "Укажите профессию и направление"})
             return
         if payload.get("age") != "yes" or payload.get("consent") != "yes":
             self.send_json(400, {"error": "Нужны подтверждение 18+ и согласие"})
@@ -543,6 +891,49 @@ class Handler(BaseHTTPRequestHandler):
             "campaign": (record.get("utm") or {}).get("utm_campaign", ""),
         })
         self.send_json(200, {"ok": True})
+
+    def create_hit(self, raw):
+        ip = client_ip(self.headers)
+        if limited(HITS, "hit:" + ip, 80, 60):
+            self.send_json(429, {"error": "Слишком часто"})
+            return
+        try:
+            payload = json.loads(raw.decode())
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self.send_json(400, {"error": "Некорректный просмотр"})
+            return
+        utm = payload.get("utm") if isinstance(payload.get("utm"), dict) else {}
+        record = {
+            "at": datetime.now(MSK).isoformat(timespec="minutes"),
+            "path": clean(payload.get("path"), 120) or "/",
+            "ref": clean(payload.get("ref"), 120),
+            "source": clean(utm.get("utm_source"), 80),
+            "campaign": clean(utm.get("utm_campaign"), 120),
+            "device": clean(payload.get("device"), 20),
+        }
+        append_jsonl(HITS_LOG, record)
+        self.send_json(200, {"ok": True})
+
+    def save_report(self):
+        parsed = urllib.parse.urlparse(self.path)
+        start, end, _preset, start_text, end_text = period_bounds(parsed.query)
+        hits = [hit for hit in read_jsonl(HITS_LOG) if in_period(parse_time(hit.get("at")), start, end)]
+        try:
+            ads = vk_report(start, end)
+        except Exception:
+            ads = {}
+        append_jsonl(REPORTS, {
+            "saved": datetime.now(MSK).isoformat(timespec="minutes"),
+            "title": f"Отчёт {start_text} — {end_text}",
+            "start": start_text,
+            "end": end_text,
+            "leads": len(filtered_leads(start, end)),
+            "hits": len(hits),
+            "vk_clicks": ads.get("clicks") or 0,
+            "vk_shows": ads.get("shows") or 0,
+            "vk_spent": ads.get("spent") or 0,
+        })
+        self.redirect("/panel/reports")
 
     def geo(self, raw):
         ip = client_ip(self.headers)
@@ -638,16 +1029,21 @@ class Handler(BaseHTTPRequestHandler):
         buffer = io.StringIO()
         buffer.write("\ufeff")
         writer = csv.writer(buffer, delimiter=";")
-        writer.writerow(["время", "имя", "телефон", "город", "гражданство", "ситуация", "комментарий", "гео", "метки", "yougile"])
+        writer.writerow(["время", "имя", "телефон", "город", "регион", "возраст", "гражданство", "профессия", "направление", "ситуация", "комментарий", "рассылка", "гео", "метки", "yougile"])
         for lead in reversed(read_leads()):
             writer.writerow([
                 lead.get("created", ""),
                 lead.get("name", ""),
                 lead.get("phone", ""),
                 lead.get("city", ""),
+                lead.get("region", ""),
+                lead.get("age_years", ""),
                 lead.get("citizenship", ""),
+                lead.get("profession", ""),
+                lead.get("direction", ""),
                 lead.get("status", ""),
                 lead.get("message", ""),
+                lead.get("ads", ""),
                 format_geo(lead.get("geo")),
                 json.dumps(lead.get("utm") or {}, ensure_ascii=False),
                 json.dumps(lead.get("yougile") or {}, ensure_ascii=False),
@@ -704,7 +1100,9 @@ def panel_html(query):
             f"""<article class="lead-card">
               <header><strong>{esc(row.get("name"))}</strong><time>{esc(row.get("created"))}</time></header>
               <p><a href="tel:{esc(re.sub(r"[^0-9+]", "", row.get("phone", "")))}">{esc(row.get("phone"))}</a></p>
-              <p>{esc(row.get("city") or "город не указан")} · {esc(row.get("citizenship"))}</p>
+              <p>{esc(row.get("city") or "город не указан")} · {esc(row.get("region") or "регион не указан")} · {esc(row.get("age_years") or "возраст не указан")}</p>
+              <p>{esc(row.get("citizenship"))}</p>
+              <p>{esc(row.get("profession") or "")} · {esc(row.get("direction") or "")}</p>
               <p>{esc(row.get("status") or "")}</p>
               <p>{esc(row.get("message") or "")}</p>
               <p class="muted">Гео: {esc(format_geo(row.get("geo")))}<br>Метки: {esc(json.dumps(row.get("utm") or {}, ensure_ascii=False))}<br>YouGile: {esc(json.dumps(row.get("yougile") or {}, ensure_ascii=False))}</p>

@@ -31,7 +31,7 @@
         <span><span class="logo-name">Народ победителей</span><small>военно-кадровое агентство</small></span>
       </a>
       <nav class="nav" id="nav" aria-label="Разделы">
-        <a href="/index.html">Главная</a><a href="/uslugi.html">Услуги</a><a href="/dokumenty.html">Документы</a><a href="/zakony.html">Законы</a><a href="/vyplaty.html">Выплаты</a><a href="/specialnosti.html">Специальности</a><a href="/komu.html">Кому помогаем</a><a href="/kontakty.html" aria-current="page">Контакты</a>
+        <a href="/index.html">Главная</a><a href="/trebovaniya.html">Требования</a><a href="/vyplaty.html">Выплаты</a><a href="/semya.html">Семья</a><a href="/put.html">Путь</a><a href="/voprosy.html">Вопросы</a><a href="/dokumenty.html">Документы</a><a href="/kontakty.html" aria-current="page">Контакты</a>
         <div class="socials"><a href="https://t.me/bpla18" target="_blank" rel="noopener noreferrer" title="Telegram bpla18"><img src="/img/icons/telegram.svg" width="22" height="22" alt=""><span>Telegram</span></a><a href="https://t.me/vsrfbpla" target="_blank" rel="noopener noreferrer" title="Telegram vsrfbpla"><img src="/img/icons/telegram.svg" width="22" height="22" alt=""><span>Канал</span></a><a href="https://max.ru/join/FkWU8D4RliZazVMtRS_w7mKd61wj3X384I2Ccv3FSYE" target="_blank" rel="noopener noreferrer" title="MAX группа"><img src="/img/icons/max.svg" width="22" height="22" alt=""><span>MAX группа</span></a><a href="https://max.ru/u/f9LHodD0cOLNfNulDMTQ8_wO_mdHdJJK4nOdIltbjQdNDetWWXIFxIFVhbg" target="_blank" rel="noopener noreferrer" title="MAX профиль"><img src="/img/icons/max.svg" width="22" height="22" alt=""><span>MAX профиль</span></a><a href="https://vk.ru/bpla18" target="_blank" rel="noopener noreferrer" title="ВКонтакте bpla18"><img src="/img/icons/vk.svg" width="22" height="22" alt=""><span>ВКонтакте</span></a><a href="https://vk.ru/club241184153" target="_blank" rel="noopener noreferrer" title="ВКонтакте группа"><img src="/img/icons/vk.svg" width="22" height="22" alt=""><span>Группа</span></a><a href="https://ok.ru/profile/910612967253" target="_blank" rel="noopener noreferrer" title="Одноклассники"><img src="/img/icons/odnoklassniki.svg" width="22" height="22" alt=""><span>ОК</span></a><a href="https://wa.me/qr/PZW3MWIV37OXL1" target="_blank" rel="noopener noreferrer" title="WhatsApp"><img src="/img/icons/whatsapp.svg" width="22" height="22" alt=""><span>WhatsApp</span></a></div>
       </nav>
       <div class="head-actions">
@@ -75,7 +75,9 @@
   </div>
   <label>Имя<input name="name" autocomplete="name" required maxlength="80"></label>
   <label>Телефон<input name="phone" autocomplete="tel" inputmode="tel" required maxlength="20" placeholder="+7"></label>
-  <label>Город<input name="city" autocomplete="address-level2" maxlength="80"></label>
+  <label>Город<input name="city" autocomplete="address-level2" maxlength="80" required></label>
+  <label>Регион<input name="region" autocomplete="address-level1" maxlength="80" required placeholder="Область, край или республика"></label>
+  <label>Возраст, полных лет<input name="age_years" type="number" inputmode="numeric" min="18" max="80" required></label>
   <label>Гражданство
     <select name="citizenship" required>
       <option value="">Выберите</option>
@@ -93,6 +95,21 @@
       <option>Другое</option>
     </select>
   </label>
+  <label class="citizenship-other" hidden>Своё гражданство<input name="citizenship_other" maxlength="80" placeholder="Напишите страну или гражданство"></label>
+  <label>Профессия и опыт<input name="profession" maxlength="160" required placeholder="Кем работали, какое образование"></label>
+  <label>Куда хотели бы пойти
+    <select name="direction" required>
+      <option value="">Выберите</option>
+      <option>Пока не знаю, нужна консультация</option>
+      <option>Вождение и техника</option>
+      <option>Связь</option>
+      <option>Беспилотные системы</option>
+      <option>Медицина</option>
+      <option>Охрана и режим</option>
+      <option>Штаб и обеспечение</option>
+      <option>Другое направление</option>
+    </select>
+  </label>
   <label>Ваша ситуация
     <select name="status">
       <option value="">Необязательно</option>
@@ -103,9 +120,10 @@
       <option>Обращаюсь как член семьи</option>
     </select>
   </label>
-  <label>Комментарий<textarea name="message" maxlength="2000" placeholder="Город, вопрос и удобное время для связи"></textarea></label>
+  <label>Дополнительная информация<textarea name="message" maxlength="2000" placeholder="Что ещё важно: семья, сроки, удобное время для связи"></textarea></label>
   <label class="check"><input type="checkbox" name="age" value="yes" required><span>Мне есть 18 лет. Сайт не для несовершеннолетних.</span></label>
-  <label class="check"><input type="checkbox" name="consent" value="yes" required><span>Даю <a href="/soglasie.html">согласие</a> на обработку персональных данных и принимаю <a href="/politika.html">политику конфиденциальности</a>.</span></label>
+  <label class="check"><input type="checkbox" name="consent" value="yes" required><span>Даю <a href="/soglasie.html">согласие</a> на обработку персональных данных и принимаю <a href="/politika.html">политику</a> и <a href="/soglashenie.html">пользовательское соглашение</a>.</span></label>
+  <label class="check"><input type="checkbox" name="ads" value="yes"><span>Согласен получать сообщения об услугах агентства. Галочка не обязательна и не проставлена заранее.</span></label>
   <div class="hp" aria-hidden="true"><label>Сайт<input name="website" tabindex="-1" autocomplete="off"></label></div>
   <button class="btn" type="submit">Отправить заявку</button>
   <p class="form-status" role="status"></p>
@@ -123,18 +141,18 @@
       </div>
       <div>
         <h2>Разделы</h2>
-        <p><a href="/uslugi.html">Услуги</a><br><a href="/dokumenty.html">Документы</a><br><a href="/zakony.html">Законы</a><br><a href="/vyplaty.html">Выплаты</a><br><a href="/specialnosti.html">Специальности</a><br><a href="/komu.html">Кому помогаем</a></p>
+        <p><a href="/trebovaniya.html">Требования</a><br><a href="/vyplaty.html">Выплаты</a><br><a href="/semya.html">Семья</a><br><a href="/put.html">Путь</a><br><a href="/voprosy.html">Вопросы</a><br><a href="/dokumenty.html">Документы</a><br><a href="/zakony.html">Законы</a><br><a href="/uslugi.html">Услуги</a></p>
       </div>
       <div>
         <h2>Документы сайта</h2>
-        <p><a href="/politika.html">Политика конфиденциальности</a><br><a href="/soglasie.html">Согласие на обработку данных</a><br><a href="/cookies.html">Файлы cookie и геолокация</a><br><a href="/oferta.html">Публичная оферта</a><br><a href="/rekvizity.html">Реквизиты</a></p>
+        <p><a href="/politika.html">Политика конфиденциальности</a><br><a href="/soglasie.html">Согласие на обработку данных</a><br><a href="/soglashenie.html">Пользовательское соглашение</a><br><a href="/cookies.html">Файлы cookie</a><br><a href="/oferta.html">Публичная оферта</a><br><a href="/rekvizity.html">Реквизиты</a></p>
       </div>
     </div>
     <div class="wrap legal-note">
       <p>ИП Шувалов Роман Альбертович · ИНН 503408651872 · ОГРНИП 326508100529586 от 08.09.2026<br>
       Юридический адрес: 142632, Московская область, г. Орехово-Зуево, д. Демихово, ул. Заводская, 27, 37<br>
       Офис для встреч: Москва, Фрунзенская наб., 22, стр. 4 · narodpobediteley@mail.ru · +7 916 357-43-62 · +7 926 426-27-37</p>
-      <p>Реклама услуг частного агентства. Идентификатор рекламы (ERID) указывается в объявлениях рекламных систем, когда кабинет передаёт креатив в оператора рекламных данных. На сайте суммы выплат не публикуются: их назначают не мы.</p>
+      <p>Реклама услуг частного агентства. Идентификатор рекламы (ERID) указывается в объявлениях рекламных систем. Цифра «от 2 300 000 ₽» на главной — ориентир по открытым региональным программам, не оферта агентства и не гарантия выплаты.</p>
     </div>
   </footer>
   <div class="tabbar" aria-label="Быстрые действия">

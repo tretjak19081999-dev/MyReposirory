@@ -61,6 +61,18 @@
     if (city && form.city && !form.city.value) form.city.value = city;
     var storedGeo = read("np_geo");
     if (storedGeo && form.city && !form.city.value && storedGeo.city) form.city.value = storedGeo.city;
+    if (storedGeo && form.region && !form.region.value && storedGeo.region) form.region.value = storedGeo.region;
+    var otherLabel = form.querySelector(".citizenship-other");
+    function syncCitizenship() {
+      var show = form.citizenship && form.citizenship.value === "Другое";
+      if (!otherLabel) return;
+      otherLabel.hidden = !show;
+      if (form.citizenship_other) form.citizenship_other.required = show;
+    }
+    if (form.citizenship) {
+      form.citizenship.addEventListener("change", syncCitizenship);
+      syncCitizenship();
+    }
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var status = form.querySelector(".form-status");
@@ -68,11 +80,17 @@
         name: form.name.value.trim(),
         phone: form.phone.value.trim(),
         city: form.city.value.trim(),
+        region: form.region.value.trim(),
+        age_years: form.age_years.value.trim(),
         citizenship: form.citizenship.value,
+        citizenship_other: form.citizenship_other ? form.citizenship_other.value.trim() : "",
+        profession: form.profession.value.trim(),
+        direction: form.direction.value,
         status: form.status.value,
         message: form.message.value.trim(),
         age: form.age.checked ? "yes" : "",
         consent: form.consent.checked ? "yes" : "",
+        ads: form.ads && form.ads.checked ? "yes" : "",
         website: form.website.value,
         page: location.pathname,
         referrer: document.referrer || "",
@@ -92,6 +110,7 @@
       }).then(function (result) {
         if (!result.ok) throw new Error((result.body && result.body.error) || "Не отправилось");
         form.reset();
+        syncCitizenship();
         status.className = "form-status ok";
         status.textContent = "Заявка принята. Мы свяжемся с вами по мере обработки.";
       }).catch(function (error) {
@@ -108,6 +127,23 @@
     try { return JSON.parse(localStorage.getItem(key) || sessionStorage.getItem(key) || "null"); }
     catch (error) { return null; }
   }
+  var hitKey = "np_hit_" + location.pathname;
+  if (!sessionStorage.getItem(hitKey)) {
+    sessionStorage.setItem(hitKey, "1");
+    var refHost = "";
+    try { refHost = document.referrer ? new URL(document.referrer).host : ""; } catch (error) { refHost = ""; }
+    fetch("/api/hit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: location.pathname,
+        ref: refHost,
+        utm: read("np_utm") || {},
+        device: window.innerWidth < 800 ? "телефон" : "компьютер"
+      })
+    }).catch(function () {});
+  }
+
   function askGeo() {
     if (!navigator.geolocation || sessionStorage.getItem("np_geo")) return;
     navigator.geolocation.getCurrentPosition(function (position) {
@@ -125,6 +161,7 @@
         sessionStorage.setItem("np_geo", JSON.stringify(geo));
         document.querySelectorAll("form.lead-form").forEach(function (form) {
           if (form.city && !form.city.value) form.city.value = geo.city;
+          if (form.region && !form.region.value && geo.region) form.region.value = geo.region;
         });
       }).catch(function () {});
     }, function () {}, { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });

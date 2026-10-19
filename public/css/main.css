@@ -440,9 +440,25 @@ textarea { min-height: 110px; resize: vertical; }
 .form-status.ok { color: var(--green); }
 .form-status.bad { color: var(--red); }
 .hp { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+.citizenship-other[hidden] { display: none; }
+.pay-banner { background: linear-gradient(135deg, #8e1c24, #c42732 55%, #1d4e89); color: #fff; padding: 42px 0; }
+.pay-banner .eyebrow { color: #fff; }
+.pay-banner h2 { font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.15; margin: 8px 0 12px; }
+.pay-banner p { max-width: 760px; }
+.pay-banner .btn.ghost { color: #fff; }
+.tone-red { box-shadow: inset 4px 0 0 #c42732; }
+.tone-blue { box-shadow: inset 4px 0 0 #1d4e89; }
+.tone-gold { box-shadow: inset 4px 0 0 #c48a1a; }
+.tone-green { box-shadow: inset 4px 0 0 #1f6b45; }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: #5c6b7a; font-family: Manrope, sans-serif; }
+.chart-card { overflow-x: auto; }
 
 .footer { background: var(--navy); color: #d5deea; padding: 36px 0 28px; }
 .footer a { color: #fff; }
+.footer .socials a { color: var(--navy); background: #fff; }
+.footer .socials a span { color: var(--navy); }
+.footer .socials a:hover { color: var(--navy); background: #f8e8ea; }
 .footer-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 24px; }
 .footer .logo-name, .footer h2 { color: #fff; }
 .legal-note { margin-top: 22px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.14); font-size: 0.84rem; }
