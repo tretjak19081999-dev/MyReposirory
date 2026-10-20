@@ -701,7 +701,7 @@ def page(title, body):
   <meta name="theme-color" content="#0e2744">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>{title}</title>
-  <link rel="icon" href="/favicon-panel.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.png" type="image/png">
   <link rel="manifest" href="/panel/manifest.webmanifest">
   <link rel="stylesheet" href="/css/main.css">
 </head>

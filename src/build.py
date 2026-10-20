@@ -108,7 +108,7 @@ FORM = """
   <label>Дополнительная информация<textarea name="message" maxlength="2000" placeholder="Что ещё важно: семья, сроки, удобное время для связи"></textarea></label>
   <label class="check"><input type="checkbox" name="age" value="yes" required><span>Мне есть 18 лет. Сайт не для несовершеннолетних.</span></label>
   <label class="check"><input type="checkbox" name="consent" value="yes" required><span>Даю <a href="/soglasie.html">согласие</a> на обработку персональных данных и принимаю <a href="/politika.html">политику</a> и <a href="/soglashenie.html">пользовательское соглашение</a>.</span></label>
-  <label class="check"><input type="checkbox" name="ads" value="yes"><span>Согласен получать сообщения об услугах агентства. Галочка не обязательна и не проставлена заранее.</span></label>
+  <label class="check"><input type="checkbox" name="ads" value="yes"><span>Согласен получать сообщения об услугах центра. Галочка не обязательна и не проставлена заранее.</span></label>
   <div class="hp" aria-hidden="true"><label>Сайт<input name="website" tabindex="-1" autocomplete="off"></label></div>
   <button class="btn" type="submit">Отправить заявку</button>
   <p class="form-status" role="status"></p>
@@ -146,8 +146,10 @@ def chrome(meta, body, path):
   <meta name="description" content="{meta["description"]}">
   <meta name="rating" content="adult">
   <link rel="canonical" href="{canonical}">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/favicon.svg">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta property="og:image" content="{HOST}/img/logo.png">
   <meta property="og:title" content="{meta["title"]}">
   <meta property="og:description" content="{meta["description"]}">
   <meta property="og:type" content="website">
@@ -166,8 +168,8 @@ def chrome(meta, body, path):
   <header class="header">
     <div class="wrap head">
       <a class="logo" href="/">
-        <img src="/img/logo.svg" width="46" height="52" alt="">
-        <span><span class="logo-name">Народ победителей</span><small>военно-кадровое агентство</small></span>
+        <img src="/img/logo.png" width="68" height="68" alt="">
+        <span><span class="logo-name">Народ победителей</span><small>Добровольческий центр</small></span>
       </a>
       <nav class="nav" id="nav" aria-label="Разделы">
         {"".join(nav_links)}
@@ -188,8 +190,8 @@ def chrome(meta, body, path):
   <footer class="footer">
     <div class="wrap footer-grid">
       <div>
-        <a class="logo" href="/"><img src="/img/logo.svg" width="46" height="52" alt=""><span><span class="logo-name">Народ победителей</span><small>ВКА</small></span></a>
-        <p>Частное военно-кадровое агентство. Не являемся военкоматом, пунктом отбора или Министерством обороны.</p>
+        <a class="logo" href="/"><img src="/img/logo.png" width="68" height="68" alt=""><span><span class="logo-name">Народ победителей</span><small>Добровольческий центр</small></span></a>
+        <p>Добровольческий центр «Народ победителей». Частный оператор: не военкомат, не пункт отбора и не подразделение Министерства обороны.</p>
         {socials()}
       </div>
       <div>

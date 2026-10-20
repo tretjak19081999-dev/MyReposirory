@@ -17,4 +17,4 @@
 3. Запустить `deploy/deploy.sh` с новым адресом или распаковать архив вручную и выполнить `systemctl enable --now narod-leads`.
 4. Выпустить сертификат на домен и проверить `https://народпобедителей.рф/api/health`.
 
-Логотип отдельно: `brand/logo.svg`, фавиконы `brand/favicon.svg` и `brand/favicon-panel.svg`.
+Логотип отдельно: `brand/logo.png`, фавикон по звезде и крыльям `brand/favicon.png`. Прежние SVG оставлены в `brand/`.
